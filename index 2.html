@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+:root{
+  --paper:#EFF3ED;
+  --sheet:#F9FBF7;
+  --ink:#1F2D24;
+  --ink-soft:#5C6B5F;
+  --rule:#C8D4C4;
+  --rule-strong:#9CB09A;
+  --debit:#AE2A19;
+  --credit:#16603F;
+  --focus:#1F2D24;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:15px}
+body{
+  font-family:'IBM Plex Sans',system-ui,sans-serif;
+  background:var(--paper);
+  background-image:repeating-linear-gradient(to bottom, transparent 0 27px, rgba(156,176,154,.18) 27px 28px);
+  color:var(--ink);
+  min-height:100vh;
+}
+.num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;text-align:right}
+button{font:inherit;cursor:pointer;color:inherit;background:none;border:none}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+input,select{
+  font:inherit;color:var(--ink);background:#fff;
+  border:1px solid var(--rule-strong);border-radius:3px;
+  padding:.42rem .55rem;width:100%;
+}
+input[type="number"]{font-family:'IBM Plex Mono',monospace;text-align:right}
+input[type="month"]{font-family:'IBM Plex Mono',monospace}
+label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:.3rem}
+
+.wrap{max-width:1080px;margin:0 auto;padding:0 1.1rem}
+
+/* ---------- masthead ---------- */
+.masthead{padding:1.6rem 0 .9rem;display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.brand h1{font-family:'Archivo Black',sans-serif;font-size:1.7rem;letter-spacing:.14em;text-transform:uppercase;line-height:1}
+.brand .co{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--ink-soft);margin-top:.45rem;letter-spacing:.04em}
+.month-ctl{display:flex;align-items:center;gap:.55rem}
+.month-ctl label{margin:0}
+.month-ctl input{width:11.5rem;background:var(--sheet)}
+
+/* ---------- ledger index tabs ---------- */
+.tabs{display:flex;gap:.35rem;overflow-x:auto;padding:0 1.1rem;max-width:1080px;margin:0 auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  font-size:.78rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  padding:.6rem 1.05rem .7rem;white-space:nowrap;
+  background:#E3E9E0;color:var(--ink-soft);
+  border:1px solid var(--rule-strong);border-bottom:none;
+  border-radius:6px 6px 0 0;
+  transform:translateY(4px);
+  transition:transform .15s ease,background .15s ease;
+}
+.tab[aria-selected="true"]{background:var(--sheet);color:var(--ink);transform:translateY(1px);position:relative;z-index:2}
+@media (prefers-reduced-motion:reduce){.tab{transition:none}}
+
+/* ---------- sheet ---------- */
+.sheet{
+  background:var(--sheet);
+  border:1px solid var(--rule-strong);
+  border-radius:0 6px 6px 6px;
+  width:min(1080px, calc(100% - 1.4rem));margin:0 auto 2.5rem;
+  padding:1.4rem 1.3rem 1.8rem;
+  position:relative;z-index:1;
+}
+section[hidden]{display:none}
+.sec-head{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;margin-bottom:1.1rem}
+.sec-head h2{font-size:.95rem;letter-spacing:.12em;text-transform:uppercase}
+.sec-head .actions{display:flex;gap:.5rem;flex-wrap:wrap}
+
+/* ---------- buttons ---------- */
+.btn{
+  background:var(--ink);color:var(--sheet);
+  padding:.5rem 1rem;border-radius:3px;
+  font-size:.78rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  border:1px solid var(--ink);
+}
+.btn:hover{background:#31463A}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--rule-strong)}
+.btn-ghost:hover{background:#EDF2EA}
+.btn-sm{padding:.3rem .6rem;font-size:.7rem}
+.btn-danger{color:var(--debit);border-color:var(--debit);background:transparent}
+.btn-danger:hover{background:#F7E9E6}
+
+/* ---------- totals strip ---------- */
+.totals{display:grid;grid-template-columns:repeat(4,1fr);gap:.7rem;margin-bottom:1.3rem}
+.tile{border:1px solid var(--rule);border-radius:4px;padding:.7rem .85rem;background:#fff}
+.tile .lbl{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+.tile .val{font-family:'IBM Plex Mono',monospace;font-size:1.12rem;font-weight:600;margin-top:.25rem;font-variant-numeric:tabular-nums}
+.tile.debit .val{color:var(--debit)}
+.tile.credit .val{color:var(--credit)}
+@media (max-width:720px){.totals{grid-template-columns:repeat(2,1fr)}}
+
+/* ---------- ledger tables ---------- */
+.scroll-x{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th{
+  font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);
+  text-align:left;padding:.45rem .55rem;border-bottom:2px solid var(--rule-strong);white-space:nowrap;
+}
+th.num{text-align:right}
+td{padding:.55rem;border-bottom:1px solid var(--rule);vertical-align:middle}
+tbody tr:hover{background:#F1F5EE}
+td .sub{font-size:.72rem;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-top:.15rem}
+.debit-txt{color:var(--debit)}
+.credit-txt{color:var(--credit);font-weight:600}
+tr.total-row td{
+  border-top:1px solid var(--rule-strong);
+  border-bottom:3px double var(--rule-strong);
+  font-weight:600;background:#F3F7F1;
+}
+.empty{
+  text-align:center;padding:2.6rem 1rem;color:var(--ink-soft);font-size:.9rem;
+  border:1px dashed var(--rule-strong);border-radius:4px;
+}
+.empty .btn{margin-top:.9rem}
+
+/* ---------- attendance inputs ---------- */
+td input{width:5.2rem;padding:.3rem .45rem}
+
+/* ---------- settings ---------- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:640px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;max-width:640px;margin-top:1rem}
+@media (max-width:640px){.grid2,.grid3{grid-template-columns:1fr}}
+.settings-block{margin-bottom:1.8rem}
+.settings-block h3{font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);border-bottom:1px solid var(--rule);padding-bottom:.4rem;margin-bottom:.9rem}
+.hint{font-size:.76rem;color:var(--ink-soft);margin-top:.5rem;line-height:1.5}
+
+/* ---------- modal ---------- */
+.overlay{
+  position:fixed;inset:0;background:rgba(31,45,36,.45);
+  display:flex;align-items:flex-start;justify-content:center;
+  padding:2.2rem 1rem;overflow-y:auto;z-index:50;
+}
+.overlay[hidden]{display:none}
+.modal{
+  background:var(--sheet);border:1px solid var(--rule-strong);border-radius:6px;
+  width:100%;max-width:560px;padding:1.4rem;
+}
+.modal h3{font-size:.95rem;letter-spacing:.1em;text-transform:uppercase;margin-bottom:1.1rem}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
+@media (max-width:520px){.frow{grid-template-columns:1fr}}
+.line-items{margin:.4rem 0 .6rem}
+.line-item{display:grid;grid-template-columns:1fr 6.2rem 2rem;gap:.5rem;margin-bottom:.5rem;align-items:center}
+.line-item.ded{grid-template-columns:1fr 5.6rem 5rem 2rem}
+.line-item .rm{color:var(--debit);font-size:1.05rem;line-height:1;text-align:center}
+.modal-foot{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.2rem;border-top:1px solid var(--rule);padding-top:1rem}
+
+/* ---------- payslip ---------- */
+.pay-modal{max-width:820px}
+#payslipSheet{
+  background:#fff;color:#1F2D24;border:1px solid var(--rule-strong);
+  padding:2.1rem 2.2rem;position:relative;font-size:.86rem;
+}
+#payslipSheet .ps-top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1F2D24;padding-bottom:1rem}
+#payslipSheet .ps-co{font-family:'Archivo Black',sans-serif;font-size:1.25rem;letter-spacing:.06em;text-transform:uppercase}
+#payslipSheet .ps-addr{font-size:.74rem;color:#5C6B5F;margin-top:.3rem}
+#payslipSheet .ps-title{text-align:right}
+#payslipSheet .ps-title .t{font-size:.8rem;letter-spacing:.22em;text-transform:uppercase;font-weight:600}
+#payslipSheet .ps-title .p{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:#5C6B5F;margin-top:.3rem}
+.ps-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;padding:.9rem 0;border-bottom:1px solid var(--rule)}
+.ps-meta div .k{font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:#5C6B5F;font-weight:600}
+.ps-meta div .v{font-family:'IBM Plex Mono',monospace;font-size:.8rem;margin-top:.2rem}
+.ps-cols{display:grid;grid-template-columns:1fr 1fr;gap:1.6rem;padding:1.1rem 0 .4rem}
+.ps-cols h4{font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;border-bottom:2px solid #1F2D24;padding-bottom:.35rem;margin-bottom:.5rem}
+.ps-cols table td{border-bottom:1px solid var(--rule);padding:.4rem .1rem;font-size:.82rem}
+.ps-cols .sumrow td{border-top:1px solid var(--rule-strong);border-bottom:none;font-weight:600}
+.ps-net{
+  display:flex;justify-content:space-between;align-items:center;
+  border-top:1px solid var(--rule-strong);border-bottom:3px double #1F2D24;
+  margin-top:1.2rem;padding:.75rem .1rem;
+}
+.ps-net .k{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+.ps-net .v{font-family:'IBM Plex Mono',monospace;font-size:1.25rem;font-weight:600;color:var(--credit)}
+.ps-foot{font-size:.68rem;color:#5C6B5F;margin-top:1.1rem;display:flex;justify-content:space-between;gap:1rem}
+.stamp{
+  position:absolute;top:1.4rem;right:6.5rem;transform:rotate(-7deg);
+  border:2.5px solid var(--debit);color:var(--debit);border-radius:4px;
+  padding:.25rem .6rem;font-family:'IBM Plex Mono',monospace;font-size:.66rem;
+  letter-spacing:.14em;text-transform:uppercase;font-weight:600;opacity:.78;
+}
+@media (max-width:620px){.ps-meta{grid-template-columns:repeat(2,1fr)}.ps-cols{grid-template-columns:1fr}}
+
+/* ---------- misc ---------- */
+.banner{
+  max-width:1080px;margin:0 auto 1rem;padding:.55rem 1rem;
+  background:#FBF3D9;border:1px solid #D9C88A;border-radius:4px;
+  font-size:.78rem;color:#6B5B1E;
+}
+footer{max-width:1080px;margin:0 auto;padding:0 1.1rem 2rem;font-size:.7rem;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace}
+@media print{
+  body *{visibility:hidden}
+  #payslipSheet,#payslipSheet *{visibility:visible}
+  #payslipSheet{position:absolute;inset:0;border:none}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap masthead">
+  <div class="brand">
+    <h1>Payroll Ledger</h1>
+    <div class="co" id="brandCo">—</div>
+  </div>
+  <div class="month-ctl">
+    <label for="monthPick">Pay period</label>
+    <input type="month" id="monthPick">
+  </div>
+</div>
+
+<div id="storageBanner" class="banner" hidden>
+  Preview mode — this environment blocks browser storage, so changes won't persist. Once deployed (Vercel) or opened as a normal page, data saves automatically.
+</div>
+
+<nav class="tabs" role="tablist">
+  <button class="tab" role="tab" aria-selected="true" data-tab="register">Pay Register</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="employees">Employees</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="attendance">Attendance</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+</nav>
+
+<main class="sheet">
+
+  <!-- ============ PAY REGISTER ============ -->
+  <section id="tab-register">
+    <div class="sec-head">
+      <h2 id="regTitle">Pay Register</h2>
+      <div class="actions">
+        <button class="btn-ghost btn btn-sm" id="csvBtn">Export CSV</button>
+      </div>
+    </div>
+    <div class="totals" id="regTotals"></div>
+    <div class="scroll-x" id="regTableWrap"></div>
+  </section>
+
+  <!-- ============ EMPLOYEES ============ -->
+  <section id="tab-employees" hidden>
+    <div class="sec-head">
+      <h2>Employees</h2>
+      <div class="actions">
+        <button class="btn btn-sm" id="addEmpBtn">+ Add employee</button>
+      </div>
+    </div>
+    <div class="scroll-x" id="empTableWrap"></div>
+  </section>
+
+  <!-- ============ ATTENDANCE ============ -->
+  <section id="tab-attendance" hidden>
+    <div class="sec-head">
+      <h2 id="attTitle">Attendance</h2>
+    </div>
+    <div class="scroll-x" id="attTableWrap"></div>
+    <p class="hint">Entries save as you type. Absence deducts at the daily rate; overtime pays hourly rate × multiplier (see Settings).</p>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="tab-settings" hidden>
+    <div class="sec-head"><h2>Settings</h2></div>
+
+    <div class="settings-block">
+      <h3>Company</h3>
+      <div class="grid2">
+        <div><label for="setCo">Company name</label><input id="setCo" placeholder="Your company"></div>
+        <div><label for="setAddr">Address line (payslip)</label><input id="setAddr" placeholder="Optional"></div>
+      </div>
+    </div>
+
+    <div class="settings-block">
+      <h3>Pay rules</h3>
+      <div class="grid3">
+        <div><label for="setCur">Currency code</label><input id="setCur" maxlength="4"></div>
+        <div><label for="setDays">Working days / month</label><input id="setDays" type="number" min="1" max="31" step="1"></div>
+        <div><label for="setHours">Hours / day</label><input id="setHours" type="number" min="1" max="24" step="0.5"></div>
+      </div>
+      <div class="grid3" style="margin-top:1rem">
+        <div><label for="setOT">Overtime multiplier</label><input id="setOT" type="number" min="1" max="5" step="0.25"></div>
+      </div>
+      <p class="hint">Daily rate = base ÷ working days. Hourly = daily ÷ hours. Overtime = hours × hourly × multiplier.</p>
+      <div style="margin-top:1rem"><button class="btn" id="saveSettingsBtn">Save settings</button></div>
+    </div>
+
+    <div class="settings-block">
+      <h3>Data</h3>
+      <div class="actions" style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="backupBtn">Export backup (JSON)</button>
+        <button class="btn btn-ghost btn-sm" id="importBtn">Import backup</button>
+        <button class="btn btn-ghost btn-sm" id="sampleBtn">Load sample data</button>
+        <button class="btn btn-danger btn-sm" id="clearBtn">Clear all data</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json" hidden>
+      <p class="hint">Data lives in this browser only. Export a backup before switching devices or clearing the browser.</p>
+    </div>
+  </section>
+</main>
+
+<footer>PAYROLL LEDGER · single-file build · figures rounded to 2dp</footer>
+
+<!-- ============ EMPLOYEE MODAL ============ -->
+<div class="overlay" id="empOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="empModalTitle">
+    <h3 id="empModalTitle">Add employee</h3>
+    <div class="frow">
+      <div><label for="fName">Full name</label><input id="fName"></div>
+      <div><label for="fStaff">Staff nº</label><input id="fStaff" placeholder="e.g. 014"></div>
+    </div>
+    <div class="frow">
+      <div><label for="fRole">Role</label><input id="fRole"></div>
+      <div><label for="fBase">Base salary / month</label><input id="fBase" type="number" min="0" step="0.01"></div>
+    </div>
+
+    <label>Allowances (monthly)</label>
+    <div class="line-items" id="allowRows"></div>
+    <button class="btn btn-ghost btn-sm" id="addAllowBtn">+ Allowance</button>
+
+    <div style="margin-top:1.1rem">
+      <label>Recurring deductions</label>
+      <div class="line-items" id="dedRows"></div>
+      <button class="btn btn-ghost btn-sm" id="addDedBtn">+ Deduction</button>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="empCancelBtn">Cancel</button>
+      <button class="btn" id="empSaveBtn">Save employee</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PAYSLIP MODAL ============ -->
+<div class="overlay" id="payOverlay" hidden>
+  <div class="modal pay-modal">
+    <div id="payslipSheet"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="payCloseBtn">Close</button>
+      <button class="btn btn-ghost" id="payPrintBtn">Print</button>
+      <button class="btn" id="payPdfBtn">Download PDF</button>
+    </div>
+  </div>
+</div>
+
+<script id="app">
+"use strict";
+/* ================= state & storage ================= */
+const KEY = "payledger.v1";
+let memStore = null;
+let persistent = true;
+
+function detectStorage(){
+  try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }
+  catch(e){ persistent = false; document.getElementById("storageBanner").hidden = false; }
+}
+function loadState(){
+  let raw = null;
+  try{ raw = localStorage.getItem(KEY); }catch(e){ raw = memStore; }
+  if(!raw) return defaultState();
+  try{
+    const s = JSON.parse(raw);
+    return { settings:{...defaultState().settings, ...(s.settings||{})}, employees:s.employees||[], attendance:s.attendance||{} };
+  }catch(e){ return defaultState(); }
+}
+function saveState(){
+  const raw = JSON.stringify(state);
+  try{ localStorage.setItem(KEY, raw); }catch(e){ memStore = raw; }
+}
+function defaultState(){
+  return {
+    settings:{ company:"", address:"", currency:"AED", workingDays:22, hoursPerDay:8, otMultiplier:1.5 },
+    employees:[],
+    attendance:{}
+  };
+}
+let state = null;
+
+/* ================= helpers ================= */
+const $ = id => document.getElementById(id);
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id-"+Date.now()+"-"+Math.random().toString(16).slice(2));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => {
+  const neg = n < -0.004;
+  const v = Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  return neg ? "("+v+")" : v;
+};
+function currentMonth(){ return $("monthPick").value || new Date().toISOString().slice(0,7); }
+function monthLabel(key){
+  const [y,m] = key.split("-").map(Number);
+  return new Date(y, m-1, 1).toLocaleString("en-GB",{month:"long",year:"numeric"});
+}
+function att(monthKey, empId){
+  const m = state.attendance[monthKey] || {};
+  return m[empId] || { absent:0, ot:0 };
+}
+
+/* ================= payroll math ================= */
+function calc(emp, a){
+  const s = state.settings;
+  const base = +emp.baseSalary || 0;
+  const daily = base / (s.workingDays || 22);
+  const hourly = daily / (s.hoursPerDay || 8);
+  const otPay = (+a.ot || 0) * hourly * (s.otMultiplier || 1);
+  const allowList = (emp.allowances||[]).map(x => ({name:x.name, amount:+x.amount||0}));
+  const allow = allowList.reduce((t,x)=>t+x.amount,0);
+  const gross = base + allow + otPay;
+  const absenceDed = (+a.absent || 0) * daily;
+  const recDeds = (emp.deductions||[]).map(d => ({
+    name: d.name,
+    amount: d.type === "percent" ? base * (+d.value||0) / 100 : (+d.value||0)
+  }));
+  const dedTotal = absenceDed + recDeds.reduce((t,x)=>t+x.amount,0);
+  return { base, daily, hourly, otPay, allowList, allow, gross, absenceDed, recDeds, dedTotal, net: gross - dedTotal };
+}
+
+/* ================= tabs ================= */
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected", b===btn ? "true":"false"));
+    ["register","employees","attendance","settings"].forEach(t=>{
+      $("tab-"+t).hidden = t !== btn.dataset.tab;
+    });
+  });
+});
+
+/* ================= render: register ================= */
+function renderRegister(){
+  const mk = currentMonth();
+  $("regTitle").textContent = "Pay Register — " + monthLabel(mk);
+  const cur = state.settings.currency;
+  const rows = state.employees.map(e => ({ e, a: att(mk, e.id), c: calc(e, att(mk, e.id)) }));
+
+  const T = rows.reduce((t,r)=>({gross:t.gross+r.c.gross, ded:t.ded+r.c.dedTotal, net:t.net+r.c.net}), {gross:0,ded:0,net:0});
+  $("regTotals").innerHTML = `
+    <div class="tile"><div class="lbl">Headcount</div><div class="val">${rows.length}</div></div>
+    <div class="tile"><div class="lbl">Gross (${esc(cur)})</div><div class="val">${fmt(T.gross)}</div></div>
+    <div class="tile debit"><div class="lbl">Deductions (${esc(cur)})</div><div class="val">${fmt(-T.ded)}</div></div>
+    <div class="tile credit"><div class="lbl">Net payable (${esc(cur)})</div><div class="val">${fmt(T.net)}</div></div>`;
+
+  if(!rows.length){
+    $("regTableWrap").innerHTML = `<div class="empty">No employees on the books yet.<br>Add your first employee to open the ledger.<br><button class="btn btn-sm" onclick="openEmpModal()">+ Add employee</button></div>`;
+    return;
+  }
+  let html = `<table><thead><tr>
+    <th>Employee</th><th class="num">Base</th><th class="num">Allow.</th><th class="num">OT pay</th>
+    <th class="num">Gross</th><th class="num">Deductions</th><th class="num">Net (${esc(cur)})</th><th></th>
+  </tr></thead><tbody>`;
+  rows.forEach(({e,c})=>{
+    html += `<tr>
+      <td><div>${esc(e.name)}</div><div class="sub">${esc(e.staffNo||"—")} · ${esc(e.role||"—")}</div></td>
+      <td class="num">${fmt(c.base)}</td>
+      <td class="num">${fmt(c.allow)}</td>
+      <td class="num">${fmt(c.otPay)}</td>
+      <td class="num">${fmt(c.gross)}</td>
+      <td class="num debit-txt">${fmt(-c.dedTotal)}</td>
+      <td class="num credit-txt">${fmt(c.net)}</td>
+      <td style="text-align:right"><button class="btn btn-ghost btn-sm" data-slip="${e.id}">Payslip</button></td>
+    </tr>`;
+  });
+  html += `<tr class="total-row">
+      <td>Totals — ${rows.length} employees</td>
+      <td class="num">${fmt(rows.reduce((t,r)=>t+r.c.base,0))}</td>
+      <td class="num">${fmt(rows.reduce((t,r)=>t+r.c.allow,0))}</td>
+      <td class="num">${fmt(rows.reduce((t,r)=>t+r.c.otPay,0))}</td>
+      <td class="num">${fmt(T.gross)}</td>
+      <td class="num debit-txt">${fmt(-T.ded)}</td>
+      <td class="num credit-txt">${fmt(T.net)}</td><td></td>
+    </tr></tbody></table>`;
+  $("regTableWrap").innerHTML = html;
+}
+$("regTableWrap").addEventListener("click", ev=>{
+  const b = ev.target.closest("[data-slip]");
+  if(b) openPayslip(b.dataset.slip);
+});
+
+/* ================= render: employees ================= */
+function renderEmployees(){
+  if(!state.employees.length){
+    $("empTableWrap").innerHTML = `<div class="empty">No employees yet.<br><button class="btn btn-sm" onclick="openEmpModal()">+ Add employee</button></div>`;
+    return;
+  }
+  const cur = state.settings.currency;
+  let html = `<table><thead><tr>
+    <th>Staff nº</th><th>Name</th><th>Role</th><th class="num">Base (${esc(cur)})</th>
+    <th class="num">Allowances</th><th class="num">Recurring ded.</th><th></th>
+  </tr></thead><tbody>`;
+  state.employees.forEach(e=>{
+    const c = calc(e, {absent:0, ot:0});
+    const recTotal = c.recDeds.reduce((t,x)=>t+x.amount,0);
+    html += `<tr>
+      <td class="num" style="text-align:left">${esc(e.staffNo||"—")}</td>
+      <td>${esc(e.name)}</td>
+      <td>${esc(e.role||"—")}</td>
+      <td class="num">${fmt(c.base)}</td>
+      <td class="num">${fmt(c.allow)}</td>
+      <td class="num debit-txt">${fmt(-recTotal)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" data-edit="${e.id}">Edit</button>
+        <button class="btn btn-danger btn-sm" data-del="${e.id}">Delete</button>
+      </td>
+    </tr>`;
+  });
+  $("empTableWrap").innerHTML = html + "</tbody></table>";
+}
+$("empTableWrap").addEventListener("click", ev=>{
+  const ed = ev.target.closest("[data-edit]");
+  const dl = ev.target.closest("[data-del]");
+  if(ed) openEmpModal(ed.dataset.edit);
+  if(dl){
+    const e = state.employees.find(x=>x.id===dl.dataset.del);
+    if(e && confirm(`Delete ${e.name}? Their attendance records go too.`)){
+      state.employees = state.employees.filter(x=>x.id!==e.id);
+      Object.values(state.attendance).forEach(m=>delete m[e.id]);
+      saveState(); renderAll();
+    }
+  }
+});
+
+/* ================= render: attendance ================= */
+function renderAttendance(){
+  const mk = currentMonth();
+  $("attTitle").textContent = "Attendance — " + monthLabel(mk);
+  if(!state.employees.length){
+    $("attTableWrap").innerHTML = `<div class="empty">Add employees first — attendance is logged per person, per month.</div>`;
+    return;
+  }
+  const cur = state.settings.currency;
+  let html = `<table><thead><tr>
+    <th>Employee</th><th class="num">Days absent</th><th class="num">OT hours</th><th class="num">Net effect (${esc(cur)})</th>
+  </tr></thead><tbody>`;
+  state.employees.forEach(e=>{
+    const a = att(mk, e.id);
+    const c = calc(e, a);
+    const effect = c.otPay - c.absenceDed;
+    html += `<tr>
+      <td><div>${esc(e.name)}</div><div class="sub">${esc(e.staffNo||"—")}</div></td>
+      <td class="num"><input type="number" min="0" max="31" step="0.5" value="${a.absent||0}" data-att="absent" data-id="${e.id}"></td>
+      <td class="num"><input type="number" min="0" step="0.5" value="${a.ot||0}" data-att="ot" data-id="${e.id}"></td>
+      <td class="num ${effect<0?'debit-txt':effect>0?'credit-txt':''}">${fmt(effect)}</td>
+    </tr>`;
+  });
+  $("attTableWrap").innerHTML = html + "</tbody></table>";
+}
+$("attTableWrap").addEventListener("input", ev=>{
+  const inp = ev.target.closest("[data-att]");
+  if(!inp) return;
+  const mk = currentMonth();
+  if(!state.attendance[mk]) state.attendance[mk] = {};
+  if(!state.attendance[mk][inp.dataset.id]) state.attendance[mk][inp.dataset.id] = {absent:0, ot:0};
+  state.attendance[mk][inp.dataset.id][inp.dataset.att] = Math.max(0, +inp.value || 0);
+  saveState();
+  renderRegister();
+  const row = inp.closest("tr");
+  const e = state.employees.find(x=>x.id===inp.dataset.id);
+  if(e && row){
+    const c = calc(e, att(mk, e.id));
+    const eff = c.otPay - c.absenceDed;
+    const cell = row.lastElementChild;
+    cell.textContent = fmt(eff);
+    cell.className = "num " + (eff<0?"debit-txt":eff>0?"credit-txt":"");
+  }
+});
+
+/* ================= employee modal ================= */
+let editingId = null;
+function lineRowAllow(name="", amount=""){
+  const d = document.createElement("div");
+  d.className = "line-item";
+  d.innerHTML = `<input placeholder="e.g. Housing" value="${esc(name)}" data-f="name">
+    <input type="number" min="0" step="0.01" placeholder="0.00" value="${amount}" data-f="amount">
+    <button class="rm" title="Remove" type="button">×</button>`;
+  d.querySelector(".rm").addEventListener("click", ()=>d.remove());
+  return d;
+}
+function lineRowDed(name="", type="fixed", value=""){
+  const d = document.createElement("div");
+  d.className = "line-item ded";
+  d.innerHTML = `<input placeholder="e.g. Pension" value="${esc(name)}" data-f="name">
+    <select data-f="type"><option value="fixed"${type==="fixed"?" selected":""}>Fixed</option><option value="percent"${type==="percent"?" selected":""}>% of base</option></select>
+    <input type="number" min="0" step="0.01" placeholder="0" value="${value}" data-f="value">
+    <button class="rm" title="Remove" type="button">×</button>`;
+  d.querySelector(".rm").addEventListener("click", ()=>d.remove());
+  return d;
+}
+function openEmpModal(id){
+  editingId = id || null;
+  const e = id ? state.employees.find(x=>x.id===id) : null;
+  $("empModalTitle").textContent = e ? "Edit employee" : "Add employee";
+  $("fName").value = e?.name || "";
+  $("fStaff").value = e?.staffNo || "";
+  $("fRole").value = e?.role || "";
+  $("fBase").value = e?.baseSalary ?? "";
+  $("allowRows").innerHTML = ""; $("dedRows").innerHTML = "";
+  (e?.allowances||[]).forEach(a=>$("allowRows").appendChild(lineRowAllow(a.name, a.amount)));
+  (e?.deductions||[]).forEach(d=>$("dedRows").appendChild(lineRowDed(d.name, d.type, d.value)));
+  $("empOverlay").hidden = false;
+  $("fName").focus();
+}
+window.openEmpModal = openEmpModal;
+$("addEmpBtn").addEventListener("click", ()=>openEmpModal());
+$("addAllowBtn").addEventListener("click", ()=>$("allowRows").appendChild(lineRowAllow()));
+$("addDedBtn").addEventListener("click", ()=>$("dedRows").appendChild(lineRowDed()));
+$("empCancelBtn").addEventListener("click", ()=>$("empOverlay").hidden = true);
+$("empOverlay").addEventListener("click", ev=>{ if(ev.target === $("empOverlay")) $("empOverlay").hidden = true; });
+
+$("empSaveBtn").addEventListener("click", ()=>{
+  const name = $("fName").value.trim();
+  const base = +$("fBase").value;
+  if(!name){ alert("Name is required."); return; }
+  if(!(base > 0)){ alert("Base salary must be greater than 0."); return; }
+  const collect = (wrap, fields) => [...wrap.children].map(row=>{
+    const o = {};
+    fields.forEach(f => o[f] = row.querySelector(`[data-f="${f}"]`).value);
+    return o;
+  }).filter(o => o.name.trim() && (+o.amount > 0 || +o.value > 0));
+  const emp = {
+    id: editingId || uid(),
+    name,
+    staffNo: $("fStaff").value.trim(),
+    role: $("fRole").value.trim(),
+    baseSalary: base,
+    allowances: collect($("allowRows"), ["name","amount"]).map(o=>({name:o.name.trim(), amount:+o.amount})),
+    deductions: collect($("dedRows"), ["name","type","value"]).map(o=>({name:o.name.trim(), type:o.type, value:+o.value}))
+  };
+  if(editingId){
+    state.employees = state.employees.map(x=>x.id===editingId ? emp : x);
+  }else{
+    state.employees.push(emp);
+  }
+  saveState();
+  $("empOverlay").hidden = true;
+  renderAll();
+});
+
+/* ================= payslip ================= */
+let slipEmpId = null;
+function openPayslip(empId){
+  slipEmpId = empId;
+  const e = state.employees.find(x=>x.id===empId);
+  if(!e) return;
+  const mk = currentMonth();
+  const a = att(mk, e.id);
+  const c = calc(e, a);
+  const s = state.settings;
+  const cur = s.currency;
+  const earnRows = [
+    `<tr><td>Base salary</td><td class="num">${fmt(c.base)}</td></tr>`,
+    ...c.allowList.map(x=>`<tr><td>${esc(x.name)}</td><td class="num">${fmt(x.amount)}</td></tr>`),
+    `<tr><td>Overtime (${a.ot||0} h × ${s.otMultiplier})</td><td class="num">${fmt(c.otPay)}</td></tr>`
+  ].join("");
+  const dedRows = [
+    `<tr><td>Absence (${a.absent||0} d)</td><td class="num">${fmt(c.absenceDed)}</td></tr>`,
+    ...c.recDeds.map(x=>`<tr><td>${esc(x.name)}</td><td class="num">${fmt(x.amount)}</td></tr>`)
+  ].join("");
+  $("payslipSheet").innerHTML = `
+    <div class="stamp">Processed · ${esc(monthLabel(mk))}</div>
+    <div class="ps-top">
+      <div>
+        <div class="ps-co">${esc(s.company || "Company name")}</div>
+        ${s.address ? `<div class="ps-addr">${esc(s.address)}</div>` : ""}
+      </div>
+      <div class="ps-title">
+        <div class="t">Payslip</div>
+        <div class="p">${esc(monthLabel(mk))} · all amounts in ${esc(cur)}</div>
+      </div>
+    </div>
+    <div class="ps-meta">
+      <div><div class="k">Employee</div><div class="v">${esc(e.name)}</div></div>
+      <div><div class="k">Staff nº</div><div class="v">${esc(e.staffNo||"—")}</div></div>
+      <div><div class="k">Role</div><div class="v">${esc(e.role||"—")}</div></div>
+      <div><div class="k">Working days</div><div class="v">${s.workingDays}</div></div>
+    </div>
+    <div class="ps-cols">
+      <div>
+        <h4>Earnings</h4>
+        <table>${earnRows}
+          <tr class="sumrow"><td>Gross pay</td><td class="num">${fmt(c.gross)}</td></tr>
+        </table>
+      </div>
+      <div>
+        <h4>Deductions</h4>
+        <table>${dedRows}
+          <tr class="sumrow"><td>Total deductions</td><td class="num">${fmt(c.dedTotal)}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="ps-net"><div class="k">Net pay</div><div class="v">${esc(cur)} ${fmt(c.net)}</div></div>
+    <div class="ps-foot">
+      <span>Computer-generated payslip — no signature required.</span>
+      <span>Generated ${new Date().toLocaleDateString("en-GB")}</span>
+    </div>`;
+  $("payOverlay").hidden = false;
+}
+$("payCloseBtn").addEventListener("click", ()=>$("payOverlay").hidden = true);
+$("payOverlay").addEventListener("click", ev=>{ if(ev.target === $("payOverlay")) $("payOverlay").hidden = true; });
+$("payPrintBtn").addEventListener("click", ()=>window.print());
+$("payPdfBtn").addEventListener("click", ()=>{
+  const e = state.employees.find(x=>x.id===slipEmpId);
+  const fname = `Payslip_${(e?.name||"employee").replace(/\s+/g,"_")}_${currentMonth()}.pdf`;
+  if(typeof html2pdf === "undefined"){ window.print(); return; }
+  html2pdf().set({
+    margin:[8,8,8,8],
+    filename:fname,
+    image:{type:"jpeg", quality:0.97},
+    html2canvas:{scale:2, backgroundColor:"#ffffff"},
+    jsPDF:{unit:"mm", format:"a4", orientation:"portrait"}
+  }).from($("payslipSheet")).save();
+});
+
+/* ================= CSV export ================= */
+$("csvBtn").addEventListener("click", ()=>{
+  const mk = currentMonth();
+  if(!state.employees.length){ alert("Nothing to export yet."); return; }
+  const q = v => `"${String(v).replace(/"/g,'""')}"`;
+  const head = ["Staff No","Name","Role","Base","Allowances","OT Hours","OT Pay","Gross","Absent Days","Absence Deduction","Other Deductions","Total Deductions","Net"];
+  const lines = [head.map(q).join(",")];
+  const T = {base:0, allow:0, ot:0, gross:0, ded:0, net:0};
+  state.employees.forEach(e=>{
+    const a = att(mk, e.id);
+    const c = calc(e, a);
+    const other = c.recDeds.reduce((t,x)=>t+x.amount,0);
+    T.base+=c.base; T.allow+=c.allow; T.ot+=c.otPay; T.gross+=c.gross; T.ded+=c.dedTotal; T.net+=c.net;
+    lines.push([e.staffNo||"", e.name, e.role||"", c.base.toFixed(2), c.allow.toFixed(2), a.ot||0, c.otPay.toFixed(2), c.gross.toFixed(2), a.absent||0, c.absenceDed.toFixed(2), other.toFixed(2), c.dedTotal.toFixed(2), c.net.toFixed(2)].map(q).join(","));
+  });
+  lines.push(["","TOTALS","",T.base.toFixed(2),T.allow.toFixed(2),"",T.ot.toFixed(2),T.gross.toFixed(2),"","","",T.ded.toFixed(2),T.net.toFixed(2)].map(q).join(","));
+  const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `PayRegister_${mk}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* ================= settings ================= */
+function renderSettings(){
+  const s = state.settings;
+  $("setCo").value = s.company; $("setAddr").value = s.address;
+  $("setCur").value = s.currency; $("setDays").value = s.workingDays;
+  $("setHours").value = s.hoursPerDay; $("setOT").value = s.otMultiplier;
+  $("brandCo").textContent = (s.company || "Set company name in Settings") + " · " + s.currency;
+}
+$("saveSettingsBtn").addEventListener("click", ()=>{
+  state.settings = {
+    company: $("setCo").value.trim(),
+    address: $("setAddr").value.trim(),
+    currency: ($("setCur").value.trim() || "AED").toUpperCase(),
+    workingDays: Math.min(31, Math.max(1, +$("setDays").value || 22)),
+    hoursPerDay: Math.min(24, Math.max(1, +$("setHours").value || 8)),
+    otMultiplier: Math.min(5, Math.max(1, +$("setOT").value || 1.5))
+  };
+  saveState(); renderAll();
+});
+
+/* ================= data tools ================= */
+$("backupBtn").addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `payledger_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$("importBtn").addEventListener("click", ()=>$("importFile").click());
+$("importFile").addEventListener("change", ev=>{
+  const f = ev.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const s = JSON.parse(r.result);
+      if(!s.settings || !Array.isArray(s.employees)) throw 0;
+      state = { settings:{...defaultState().settings, ...s.settings}, employees:s.employees, attendance:s.attendance||{} };
+      saveState(); renderAll();
+    }catch(e){ alert("That file doesn't look like a Payroll Ledger backup."); }
+    ev.target.value = "";
+  };
+  r.readAsText(f);
+});
+$("clearBtn").addEventListener("click", ()=>{
+  if(confirm("Clear ALL employees, attendance, and settings? This can't be undone.")){
+    state = defaultState();
+    saveState(); renderAll();
+  }
+});
+$("sampleBtn").addEventListener("click", ()=>{
+  if(state.employees.length && !confirm("Add 3 sample employees on top of your current data?")) return;
+  const mk = currentMonth();
+  const samples = [
+    {name:"A. Fernandes", staffNo:"001", role:"Operations Lead", baseSalary:12000,
+     allowances:[{name:"Housing", amount:3000},{name:"Transport", amount:800}],
+     deductions:[{name:"Pension", type:"percent", value:5}], a:{absent:0, ot:6}},
+    {name:"M. Osei", staffNo:"002", role:"Technician", baseSalary:7500,
+     allowances:[{name:"Transport", amount:600}],
+     deductions:[{name:"Pension", type:"percent", value:5},{name:"Staff loan", type:"fixed", value:400}], a:{absent:1, ot:10}},
+    {name:"R. Kaur", staffNo:"003", role:"Accounts Assistant", baseSalary:6800,
+     allowances:[],
+     deductions:[{name:"Pension", type:"percent", value:5}], a:{absent:0, ot:0}}
+  ];
+  if(!state.attendance[mk]) state.attendance[mk] = {};
+  samples.forEach(x=>{
+    const id = uid();
+    const {a, ...emp} = x;
+    state.employees.push({id, ...emp});
+    state.attendance[mk][id] = a;
+  });
+  if(!state.settings.company){ state.settings.company = "Sample Trading Co."; }
+  saveState(); renderAll();
+});
+
+/* ================= boot ================= */
+function renderAll(){
+  renderSettings();
+  renderRegister();
+  renderEmployees();
+  renderAttendance();
+}
+detectStorage();
+state = loadState();
+$("monthPick").value = new Date().toISOString().slice(0,7);
+$("monthPick").addEventListener("change", ()=>{ if(!$("monthPick").value) $("monthPick").value = new Date().toISOString().slice(0,7); renderRegister(); renderAttendance(); });
+renderAll();
+</script>
+</body>
+</html>
